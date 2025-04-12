@@ -81,3 +81,20 @@ bitz collect -m 25
 # 自定义cpu 
 默认为cpu 数量 -1。比如 一共有 64 个cpu，就使用63个cpu 挖矿，剩下一个cpu 防止你电脑卡死
 ```bitz collect --c 8```
+
+因为有一些函数 会因为网络情况等 报错导致程序直接退出 我没修复
+```bash
+#macos linux 新建一个sh 文件 执行sh 文件就行
+#!/bin/bash
+
+while true; do
+  echo "启动中..."
+  bitz collect
+  echo "程序已退出，5秒后重启..."
+  sleep 5
+done
+
+
+# windows 在 power shell 中运行
+while(1){try{./bitz.exe collect}catch{}}
+```
