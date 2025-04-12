@@ -4,6 +4,8 @@ mod error;
 mod send;
 mod utils;
 
+use colored::*;
+use crossterm::style::Stylize;
 use futures::StreamExt;
 use std::{sync::Arc, sync::RwLock};
 use tokio_tungstenite::connect_async;
@@ -14,7 +16,7 @@ use clap::{command, Parser, Subcommand};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
-    signature::{read_keypair_file, Keypair},
+    signature::{read_keypair_file, Keypair, Signer},
 };
 use utils::{PoolCollectingData, SoloCollectingData, Tip};
 
@@ -93,8 +95,8 @@ struct Args {
     #[arg(
         long,
         value_name = "KEYPAIR_FILEPATH",
-        help = "Filepath to signer keypair.",
-        default_value = "id.json",
+        help = "Filepath to signer keypair. Base58 or Raw JSON.",
+        default_value = "key.txt",
         global = true
     )]
     keypair: Option<String>,
@@ -140,10 +142,19 @@ async fn main() {
 
     // Load the config file from custom path, the default path, or use default config values
     let cli_config = if let Some(config_file) = &args.config_file {
-        solana_cli_config::Config::load(config_file).unwrap_or_else(|_| {
-            eprintln!("error: Could not find config file `{}`", config_file);
-            std::process::exit(1);
-        })
+        if std::path::Path::new(config_file).exists() {
+            solana_cli_config::Config::load(config_file).unwrap_or_else(|_| {
+                eprintln!("error: Could not load config file `{}`", config_file);
+                std::process::exit(1);
+            })
+        } else {
+            // 如果指定的配置文件不存在，尝试默认配置文件
+            if let Some(default_config_file) = &*solana_cli_config::CONFIG_FILE {
+                solana_cli_config::Config::load(default_config_file).unwrap_or_default()
+            } else {
+                solana_cli_config::Config::default()
+            }
+        }
     } else if let Some(config_file) = &*solana_cli_config::CONFIG_FILE {
         solana_cli_config::Config::load(config_file).unwrap_or_default()
     } else {
@@ -169,6 +180,9 @@ async fn main() {
         solo_collecting_data,
         pool_collecting_data,
     ));
+
+    let signer = miner.signer();
+    println!("Address: {}", signer.pubkey().to_string().green());
 
     // Execute user command.
     match args.command {
@@ -235,16 +249,37 @@ impl Miner {
 
     pub fn signer(&self) -> Keypair {
         match self.keypair_filepath.clone() {
-            Some(filepath) => read_keypair_file(filepath.clone())
-                .expect(format!("No keypair found at {}", filepath).as_str()),
+            Some(filepath) => Miner::read_keypair_from_file(filepath.clone()),
             None => panic!("No keypair provided"),
+        }
+    }
+
+    pub fn read_keypair_from_file(filepath: String) -> Keypair {
+        // 首先判断文件是否存在
+        if !std::path::Path::new(&filepath).exists() {
+            panic!("File not found at {}", filepath);
+        }
+
+        // 先尝试 read_keypair_file
+        match read_keypair_file(&filepath) {
+            Ok(keypair) => keypair,
+            Err(_) => {
+                // 如果读取文件失败，尝试读取文件内容作为 base58 字符串
+                match std::fs::read_to_string(&filepath) {
+                    Ok(content) => {
+                        // 移除可能的空白字符
+                        let content = content.trim();
+                        Keypair::from_base58_string(content)
+                    }
+                    Err(_) => panic!("Could not read file content: {}", filepath),
+                }
+            }
         }
     }
 
     pub fn fee_payer(&self) -> Keypair {
         match self.fee_payer_filepath.clone() {
-            Some(filepath) => read_keypair_file(filepath.clone())
-                .expect(format!("No fee payer keypair found at {}", filepath).as_str()),
+            Some(filepath) => Miner::read_keypair_from_file(filepath.clone()),
             None => panic!("No fee payer keypair provided"),
         }
     }
