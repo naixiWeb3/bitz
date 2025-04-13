@@ -1,5 +1,4 @@
-use std::{str::FromStr, time::Duration};
-
+use std::time::Duration;
 use colored::*;
 use eore_api::error::OreError;
 use indicatif::ProgressBar;
@@ -11,7 +10,6 @@ use solana_client::{
 use solana_program::{
     instruction::Instruction,
     native_token::{lamports_to_sol, sol_to_lamports},
-    pubkey::Pubkey,
 };
 use solana_rpc_client::spinner;
 use solana_sdk::{
@@ -28,12 +26,8 @@ use crate::Miner;
 const MIN_ETH_BALANCE: f64 = 0.0005;
 
 const RPC_RETRIES: usize = 0;
-const _SIMULATION_RETRIES: usize = 4;
-const GATEWAY_RETRIES: usize = 150;
 const CONFIRM_RETRIES: usize = 8;
-
 const CONFIRM_DELAY: u64 = 500;
-const GATEWAY_DELAY: u64 = 0;
 
 impl Miner {
     pub async fn send_and_confirm(
@@ -123,7 +117,7 @@ impl Miner {
         let mut attempts = 0;
         loop {
             debug!("Transaction attempt #{}", attempts);
-            progress_bar.set_message(format!("Submitting transaction... (attempt {})", attempts,));
+            progress_bar.set_message(format!("Submitting transaction... (attempt {})", attempts));
 
             // Sign tx with a new blockhash (after approximately ~45 sec)
             if attempts % 10 == 0 {
@@ -177,7 +171,7 @@ impl Miner {
             // Send transaction
             attempts += 1;
             debug!("Sending transaction to RPC");
-            match client.send_and_confirm_transaction(&tx).await {
+            match client.send_transaction_with_config(&tx, send_cfg).await {
                 Ok(sig) => {
                     debug!("Transaction sent successfully: {}", sig);
 
@@ -233,7 +227,7 @@ impl Miner {
                                                             return Err(ClientError {
                                                                 request: None,
                                                                 kind: ClientErrorKind::Custom(err.to_string()),
-                                                            });
+                                                                    });
                                                         }
                                                     }
                                                 },
