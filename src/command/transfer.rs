@@ -1,8 +1,6 @@
 use std::str::FromStr;
-
 use colored::*;
-use eore_api::consts::MINT_ADDRESS;
-use eore_api::consts;
+use eore_api::consts::{MINT_ADDRESS, TOKEN_DECIMALS};
 use solana_program::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
 use spl_token::amount_to_ui_amount;
@@ -35,7 +33,7 @@ impl Miner {
                 spl_associated_token_account::instruction::create_associated_token_account(
                     &signer.pubkey(),
                     &to,
-                    &eore_api::consts::MINT_ADDRESS,
+                    &MINT_ADDRESS,
                     &spl_token::id(),
                 ),
             );
@@ -50,7 +48,7 @@ impl Miner {
                 "\nYou are about to transfer {}.\n\nAre you sure you want to continue? [Y/n]",
                 format!(
                     "{} BITZ",
-                    amount_to_ui_amount(amount, eore_api::consts::TOKEN_DECIMALS)
+                    amount_to_ui_amount(amount, TOKEN_DECIMALS)
                 )
                 .bold(),
             )
