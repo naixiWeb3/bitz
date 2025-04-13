@@ -9,6 +9,7 @@ use solana_client::{
 };
 use solana_program::{
     instruction::Instruction,
+    message::Message,
     native_token::{lamports_to_sol, sol_to_lamports},
 };
 use solana_rpc_client::spinner;
@@ -25,9 +26,9 @@ use crate::Miner;
 
 const MIN_ETH_BALANCE: f64 = 0.0005;
 const RPC_RETRIES: usize = 0;
-const CONFIRM_RETRIES: usize = 5; // Reduced from 8
-const CONFIRM_DELAY: u64 = 200; // Reduced from 500
-const MAX_ATTEMPTS: usize = 30; // New limit
+const CONFIRM_RETRIES: usize = 5;
+const CONFIRM_DELAY: u64 = 200;
+const MAX_ATTEMPTS: usize = 30;
 
 impl Miner {
     pub async fn send_and_confirm(
@@ -48,18 +49,24 @@ impl Miner {
         debug!("RPC client URL: {}", client.url());
 
         // Check balance
-        self.check_balance().await;
+        self.check_balance().await?;
 
         // Set compute budget
         let mut final_ixs = vec![];
         match compute_budget {
             ComputeBudget::Dynamic => {
                 debug!("Using dynamic compute budget");
-                let sim_tx = Transaction::new_unsigned(ixs);
+                // Create a message for simulation
+                let (blockhash, _) = get_latest_blockhash_with_retries(&client).await?;
+                let message = Message::new_with_blockhash(ixs, Some(&fee_payer.pubkey()), &blockhash);
+                let sim_tx = Transaction::new_unsigned(message);
                 let sim_result = client.simulate_transaction(&sim_tx).await;
                 let units = match sim_result {
                     Ok(sim) => sim.value.units_consumed.unwrap_or(100_000) as u32,
-                    Err(_) => 100_000, // Fallback
+                    Err(err) => {
+                        warn!("Simulation failed: {}. Using default 100,000 units", err);
+                        100_000
+                    }
                 };
                 debug!("Simulated compute units: {}", units);
                 final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(units));
@@ -71,7 +78,7 @@ impl Miner {
         }
 
         // Set compute unit price
-        let priority_fee = self.priority_fee.unwrap_or(5000); // Static fallback
+        let priority_fee = self.priority_fee.unwrap_or(5000);
         debug!("Setting compute unit price: {} microlamports", priority_fee);
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(priority_fee));
 
@@ -98,7 +105,7 @@ impl Miner {
         // Build transaction
         let send_cfg = RpcSendTransactionConfig {
             skip_preflight: true,
-            preflight_commitment: Some(CommitmentLevel::Processed), // Changed to Processed
+            preflight_commitment: Some(CommitmentLevel::Processed),
             encoding: Some(UiTransactionEncoding::Base64),
             max_retries: Some(RPC_RETRIES),
             min_context_slot: None,
