@@ -3,11 +3,9 @@ use std::{
     sync::{Arc, RwLock},
     thread::sleep,
     time::{Duration, Instant},
-    usize,
 };
 
 use b64::FromBase64;
-use colored::*;
 use crossterm::{
     cursor::MoveTo,
     execute,
@@ -273,7 +271,7 @@ impl Miner {
         challenge: [u8; 32],
         cutoff_time: u64,
         cores: u64,
-        min_difficulty: u32,
+        _min_difficulty: u32, // Ignored since we want exactly 25 or 30
         nonce_indices: &[u64],
         pool_channel: Option<tokio::sync::mpsc::UnboundedSender<Solution>>,
     ) -> Solution {
@@ -281,7 +279,7 @@ impl Miner {
         let progress_bar = Arc::new(spinner::new_progress_bar());
         let global_best_difficulty = Arc::new(RwLock::new(0u32));
 
-        progress_bar.set_message("Collecting...");
+        progress_bar.set_message("Collecting (difficulty 25 or 30)...");
         let core_ids = core_affinity::get_core_ids().expect("Failed to fetch core count");
         let core_ids = core_ids.into_iter().filter(|id| id.id < (cores as usize));
         let handles: Vec<_> = core_ids
@@ -310,10 +308,10 @@ impl Miner {
                                 &nonce.to_le_bytes(),
                             );
 
-                            // Look for best difficulty score in all hashes
+                            // Look for difficulty 25 or 30 only
                             for hx in hxs {
                                 let difficulty = hx.difficulty();
-                                if difficulty.gt(&best_difficulty) {
+                                if difficulty == 25 || difficulty == 30 {
                                     best_nonce = nonce;
                                     best_difficulty = difficulty;
                                     best_hash = hx;
@@ -322,18 +320,16 @@ impl Miner {
                                         // Update best global difficulty
                                         *global_best_difficulty.write().unwrap() = best_difficulty;
 
-                                        // Continuously upload best solution to pool
-                                        if difficulty.ge(&min_difficulty) {
-                                            if let Some(ref ch) = pool_channel {
-                                                let digest = best_hash.d;
-                                                let nonce = nonce.to_le_bytes();
-                                                let solution = Solution {
-                                                    d: digest,
-                                                    n: nonce,
-                                                };
-                                                if let Err(err) = ch.send(solution) {
-                                                    println!("{} {:?}", "ERROR".bold().red(), err);
-                                                }
+                                        // Continuously upload solution to pool
+                                        if let Some(ref ch) = pool_channel {
+                                            let digest = best_hash.d;
+                                            let nonce = nonce.to_le_bytes();
+                                            let solution = Solution {
+                                                d: digest,
+                                                n: nonce,
+                                            };
+                                            if let Err(err) = ch.send(solution) {
+                                                println!("{} {:?}", "ERROR".bold().red(), err);
                                             }
                                         }
                                     }
@@ -347,17 +343,15 @@ impl Miner {
                                 if timer.elapsed().as_secs().ge(&cutoff_time) {
                                     if i.id == 0 {
                                         progress_bar.set_message(format!(
-                                            "Collecting...\n  Best score: {}",
+                                            "Collecting (difficulty 25 or 30)...\n  Best score: {}",
                                             global_best_difficulty,
                                         ));
                                     }
-                                    if global_best_difficulty.ge(&min_difficulty) {
-                                        // Mine until min difficulty has been met
-                                        break;
-                                    }
+                                    // Exit even if no valid difficulty found to respect cutoff
+                                    break;
                                 } else if i.id == 0 {
                                     progress_bar.set_message(format!(
-                                        "Collecting...\n  Best score: {}\n  Time remaining: {}",
+                                        "Collecting (difficulty 25 or 30)...\n  Best score: {}\n  Time remaining: {}",
                                         global_best_difficulty,
                                         format_duration(
                                             cutoff_time.saturating_sub(timer.elapsed().as_secs())
@@ -384,7 +378,7 @@ impl Miner {
         let mut best_hash = Hash::default();
         for h in handles {
             if let Ok((nonce, difficulty, hash)) = h.join() {
-                if difficulty > best_difficulty {
+                if (difficulty == 25 || difficulty == 30) && difficulty > best_difficulty {
                     best_difficulty = difficulty;
                     best_nonce = nonce;
                     best_hash = hash;
@@ -392,6 +386,10 @@ impl Miner {
             }
         }
 
+        // Return default solution if no valid difficulty found
+        if best_difficulty == 0 {
+            progress_bar.finish_with_message("No solution with difficulty 25 or 30 found");
+        }
         Solution::new(best_hash.d, best_nonce.to_le_bytes())
     }
 
