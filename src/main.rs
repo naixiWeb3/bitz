@@ -5,12 +5,7 @@ mod send;
 mod utils;
 
 use colored::*;
-use crossterm::style::Stylize;
-use futures::StreamExt;
 use std::{sync::Arc, sync::RwLock};
-use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::protocol::Message;
-
 use args::*;
 use clap::{command, Parser, Subcommand};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -18,7 +13,7 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     signature::{read_keypair_file, Keypair, Signer},
 };
-use utils::{PoolCollectingData, SoloCollectingData, Tip};
+use utils::{PoolCollectingData, SoloCollectingData};
 
 // TODO: Unify balance and proof into "account"
 // TODO: Move balance subcommands to "pool"
@@ -148,7 +143,7 @@ async fn main() {
                 std::process::exit(1);
             })
         } else {
-            // 如果指定的配置文件不存在，尝试默认配置文件
+            // If the specified config file doesn't exist, try the default config file
             if let Some(default_config_file) = &*solana_cli_config::CONFIG_FILE {
                 solana_cli_config::Config::load(default_config_file).unwrap_or_default()
             } else {
@@ -161,7 +156,7 @@ async fn main() {
         solana_cli_config::Config::default()
     };
 
-    // Initialize miner.
+    // Initialize miner
     let cluster = args.rpc.unwrap_or(cli_config.json_rpc_url);
     let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path.clone());
     let fee_payer_filepath = args.fee_payer.unwrap_or(default_keypair.clone());
@@ -184,7 +179,7 @@ async fn main() {
     let signer = miner.signer();
     println!("Address: {}", signer.pubkey().to_string().green());
 
-    // Execute user command.
+    // Execute user command
     match args.command {
         Commands::Account(args) => {
             miner.account(args).await;
@@ -255,19 +250,19 @@ impl Miner {
     }
 
     pub fn read_keypair_from_file(filepath: String) -> Keypair {
-        // 首先判断文件是否存在
+        // Check if file exists
         if !std::path::Path::new(&filepath).exists() {
             panic!("File not found at {}", filepath);
         }
 
-        // 先尝试 read_keypair_file
+        // Try reading as keypair file first
         match read_keypair_file(&filepath) {
             Ok(keypair) => keypair,
             Err(_) => {
-                // 如果读取文件失败，尝试读取文件内容作为 base58 字符串
+                // If reading fails, try reading as base58 string
                 match std::fs::read_to_string(&filepath) {
                     Ok(content) => {
-                        // 移除可能的空白字符
+                        // Remove whitespace
                         let content = content.trim();
                         Keypair::from_base58_string(content)
                     }
