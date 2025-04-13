@@ -487,7 +487,7 @@ impl Miner {
 
         // Check if boost account exists
         println!("Checking boost account...");
-        let boost = match get_boost(&self.rpc_client, boost_address).await {
+        let _boost = match get_boost(&self.rpc_client, boost_address).await {
             Ok(boost) => {
                 println!("Found boost account with weight: {}", boost.weight);
                 boost
